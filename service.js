@@ -11,16 +11,19 @@ const WX_APP_SECRET = ""
 const secret = '';
 
 const app = express();
+
+const apiRouter = express.Router(); // 创建一个新的路由器对象
+
 app.use(express.json());
 
 const manager = new MySqlManager({
   host: 'localhost',
   user: 'root',
   password: '123456',
-  database: 'gitHub'
+  database: 'chat_bot'
 });
 
-app.post('/register', async (req, res) => {
+apiRouter.post('/register', async (req, res) => {
   const { username, password } = req.body;
   console.log(req.body)
   try {
@@ -39,7 +42,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-app.post('/login',async (req, res) => {
+apiRouter.post('/login',async (req, res) => {
   const { username, password } = req.body;
 
   try {
@@ -85,7 +88,7 @@ const authenticate = (req, res, next) => {
   }
 };
 
-app.get('/userInfo', authenticate, async (req, res) => {
+apiRouter.get('/userInfo', authenticate, async (req, res) => {
   try {
     await manager.connect();
     console.log(req.user)
@@ -104,7 +107,7 @@ app.get('/userInfo', authenticate, async (req, res) => {
 });
 
 
-app.get('/token/:code', async (req, res) => {
+apiRouter.get('/token/:code', async (req, res) => {
   const { code } = req.params;
   const options = {
     url: "https://api.weixin.qq.com/sns/jscode2session?appid=" + WX_APP_ID+"&secret=" + WX_APP_SECRET + "&js_code=" + code + "&grant_type=authorization_code" ,
@@ -141,7 +144,7 @@ app.get('/token/:code', async (req, res) => {
 });
 
 
-app.post('/chat',authenticate, async (req, res) => {
+apiRouter.post('/chat',authenticate, async (req, res) => {
   const data = req.body;
   const options = {
     url: 'http://54.160.114.251:8086/chat/completions',
@@ -183,7 +186,7 @@ app.post('/chat',authenticate, async (req, res) => {
 });
 
 // 修改用户接口
-app.post('/users/addCount',authenticate, async (req, res) => {
+apiRouter.post('/users/addCount',authenticate, async (req, res) => {
   const { totalCount, dailyCount } = req.body;
 
   if (!totalCount && !dailyCount) {
@@ -213,7 +216,7 @@ app.post('/users/addCount',authenticate, async (req, res) => {
 });
 
 // 修改用户接口
-app.post('/users/status',authenticate, async (req, res) => {
+apiRouter.post('/users/status',authenticate, async (req, res) => {
   const { status } = req.body;
 
   if (!status ) {
@@ -236,7 +239,7 @@ app.post('/users/status',authenticate, async (req, res) => {
 });
 
 // 查询用户接口
-app.get('/users',authenticate, async (req, res) => {
+apiRouter.get('/users',authenticate, async (req, res) => {
   try {
     await updateDailyCount(req.user.username);
     const rows = await manager.select("t_users",{username:req.user.username})
@@ -277,6 +280,9 @@ async function updateDailyCount(username)  {
     console.error(err);
   }
 }
+
+
+app.use('/api', apiRouter);
 
 // 启动服务器
 app.listen(9527, () => {
