@@ -69,7 +69,7 @@ apiRouter.post('/register', async (req, res) => {
     await manager.connect();
     const rows = await manager.select("t_users",{username})
 
-    if (rows.length === 0) {
+    if (!rows || rows.length === 0) {
       const insert = await manager.insert("t_users",{username,password,totalCount:INITAL_TOTAL_COUNT,status:INITAL_STATUS,dailyCount:DAILY_COUNT})
       res.send({ message: 'User registered successfully' });
     }else{
@@ -171,7 +171,7 @@ apiRouter.post('/token', async (req, res) => {
       await manager.connect();
       const rows = await manager.select("t_users",{username})
       // 执行 MySQL 查询语句
-      if (rows.length === 0) {
+      if (!rows || rows.length === 0) {
         if (sharedUserId) {
           const result = await manager.execute('UPDATE t_users SET totalCount = totalCount + ? WHERE id = ?', [DAILY_COUNT,sharedUserId])
         }
@@ -203,7 +203,7 @@ apiRouter.post('/chat',authenticate, async (req, res) => {
   };
 
   const rows = await manager.select("t_users",{username:req.user.username})
-  if (rows.length === 0) {
+  if (!rows || rows.length === 0) {
     return res.status(201).json({ message: '用户不存在' });
   }
   const item = rows[0];
@@ -244,7 +244,7 @@ apiRouter.post('/users/addCount',authenticate, async (req, res) => {
     if (totalCount) {
 
         const result = await manager.execute('UPDATE t_users SET totalCount = totalCount + ? WHERE username = ?', [totalCount,req.user.username])
-        if (result.affectedRows === 0) {
+        if (!result || result.affectedRows === 0) {
           return res.status(201).json({ message: '用户不存在' });
         }
       
@@ -252,7 +252,7 @@ apiRouter.post('/users/addCount',authenticate, async (req, res) => {
     if (dailyCount) {
 
         const result = await manager.execute('UPDATE t_users SET dailyCount = dailyCount + ? WHERE username = ?', [dailyCount,req.user.username])
-        if (result.affectedRows === 0) {
+        if (!result || result.affectedRows === 0) {
           return res.status(201).json({ message: '用户不存在' });
         }
       
@@ -278,7 +278,7 @@ apiRouter.post('/users/status',authenticate, async (req, res) => {
   try {
     const result = await manager.update("t_users",{totalCount,status,dailyCount},{username:req.user.username})
 
-    if (result.affectedRows === 0) {
+    if (!result ||  result.affectedRows === 0) {
       return res.status(201).json({ message: '用户不存在' });
     }
     const { id, totalCount, status, dailyCount} = result[0];
@@ -298,7 +298,7 @@ apiRouter.get('/users',authenticate, async (req, res) => {
     const rows = await manager.select("t_users",{username:req.user.username})
     // 执行 MySQL 查询语句
 
-    if (rows.length === 0) {
+    if (!rows ||  rows.length === 0) {
       return res.status(201).json({ message: '用户不存在' });
     }
 
@@ -324,7 +324,7 @@ async function updateDailyCount(username)  {
     ')',
     [username, today, username, today]
     );
-    if (rows.affectedRows === 0) {
+    if (!rows ||  rows.affectedRows === 0) {
       
     }else{
       const result = await manager.update("t_users",{dailyCount:DAILY_COUNT},{username:username})
