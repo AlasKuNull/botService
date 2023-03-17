@@ -1,7 +1,11 @@
 const express = require('express');
 const request = require('request');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsDoc = require('swagger-jsdoc');
 const jwt = require('jsonwebtoken');
 const MySqlManager = require('./dataManager');
+const bunyan = require('bunyan');
+
 const INITAL_TOTAL_COUNT = 5
 const DAILY_COUNT = 3
 const INITAL_STATUS = 0
@@ -12,7 +16,32 @@ const secret = '';
 
 const app = express();
 
+// 创建一个日志记录器
+const logger = bunyan.createLogger({
+  name: 'myapp',
+  level: 'error',
+  streams: [
+    { path: './myapp.log' },
+    { stream: process.stdout }
+  ]
+});
+
+// Swagger文档配置
+const swaggerOptions = {
+  swaggerDefinition: {
+    info: {
+      title: 'My API',
+      description: 'My API Description',
+      version: '1.0.0',
+    },
+  },
+  apis: ['service.js'], // API文档所在的文件路径
+};
+
+const swaggerDocs = swaggerJsDoc(swaggerOptions);
+
 const apiRouter = express.Router(); // 创建一个新的路由器对象
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 app.use(express.json());
 
@@ -23,6 +52,16 @@ const manager = new MySqlManager({
   database: 'chat_bot'
 });
 
+
+/**
+ * @swagger
+ * /register:
+ *   post:
+ *     description: Greate a user
+ *     responses:
+ *       200:
+ *         description: Returns a message
+ */
 apiRouter.post('/register', async (req, res) => {
   const { username, password } = req.body;
   console.log(req.body)
@@ -37,6 +76,7 @@ apiRouter.post('/register', async (req, res) => {
       res.status(400).send({ error: 'Username already exists' });
     }
   } catch (error) {
+    logger.error(error);
     console.error(error);
     res.status(500).json({ message: 'Internal server error' });
   }
@@ -59,6 +99,7 @@ apiRouter.post('/login',async (req, res) => {
     res.send({ message: 'Login successful', token ,data:{id,username,status,totalCount,dailyCount}});
   } catch (error) {
     console.error(error);
+    logger.error(error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -84,6 +125,7 @@ const authenticate = (req, res, next) => {
     next();
   } catch (error) {
     console.error(error);
+    logger.error(error);
     return res.status(401).send({ error: 'Token is invalid or expired' });
   }
 };
@@ -102,13 +144,14 @@ apiRouter.get('/userInfo', authenticate, async (req, res) => {
     res.send({id,username,status,totalCount,dailyCount})
   } catch (error) {
     console.error(error);
+        logger.error(error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 
-apiRouter.get('/token/:code', async (req, res) => {
-  const { code } = req.params;
+apiRouter.post('/token', async (req, res) => {
+  const { code,sharedUserId } = req.body;
   const options = {
     url: "https://api.weixin.qq.com/sns/jscode2session?appid=" + WX_APP_ID+"&secret=" + WX_APP_SECRET + "&js_code=" + code + "&grant_type=authorization_code" ,
     method: 'GET'
@@ -124,16 +167,19 @@ apiRouter.get('/token/:code', async (req, res) => {
     const username = data.openid
     const password = "123456"
     const token = jwt.sign({ username }, secret, { expiresIn: '168h' });
-
     try {
       await manager.connect();
       const rows = await manager.select("t_users",{username})
       // 执行 MySQL 查询语句
       if (rows.length === 0) {
+        if (sharedUserId) {
+          const result = await manager.execute('UPDATE t_users SET totalCount = totalCount + ? WHERE id = ?', [DAILY_COUNT,sharedUserId])
+        }
         const result = await manager.insert("t_users",{username,password,totalCount:INITAL_TOTAL_COUNT,status:INITAL_STATUS,dailyCount:DAILY_COUNT})
       }
 
     } catch (error) {
+      logger.error(error);
       console.log(error)
     }
     await updateDailyCount(username);
@@ -147,7 +193,7 @@ apiRouter.get('/token/:code', async (req, res) => {
 apiRouter.post('/chat',authenticate, async (req, res) => {
   const data = req.body;
   const options = {
-    url: 'http://54.160.114.251:8086/chat/completions',
+    url: 'http://18.206.232.23:8086/chat/completions',
     method: 'POST',
     headers: {
       'Authorization':SK_OPENAI_API_KEY,
@@ -179,6 +225,7 @@ apiRouter.post('/chat',authenticate, async (req, res) => {
         }
       }
     } catch (error) {
+      logger.error(error);
       console.error(error);
     }
     res.send(body);
@@ -187,7 +234,7 @@ apiRouter.post('/chat',authenticate, async (req, res) => {
 
 // 修改用户接口
 apiRouter.post('/users/addCount',authenticate, async (req, res) => {
-  const { totalCount, dailyCount } = req.body;
+  const { sharedUserId,totalCount, dailyCount } = req.body;
 
   if (!totalCount && !dailyCount) {
     return res.status(400).json({ message: 'Missing required fields' });
@@ -195,21 +242,26 @@ apiRouter.post('/users/addCount',authenticate, async (req, res) => {
 
   try {
     if (totalCount) {
-      const result = await manager.execute('UPDATE t_users SET totalCount = totalCount + ? WHERE username = ?', [totalCount,req.user.username])
-      if (result.affectedRows === 0) {
-        return res.status(201).json({ message: '用户不存在' });
-      }
+
+        const result = await manager.execute('UPDATE t_users SET totalCount = totalCount + ? WHERE username = ?', [totalCount,req.user.username])
+        if (result.affectedRows === 0) {
+          return res.status(201).json({ message: '用户不存在' });
+        }
+      
     }
     if (dailyCount) {
-      const result = await manager.execute('UPDATE t_users SET dailyCount = dailyCount + ? WHERE username = ?', [dailyCount,req.user.username])
-      if (result.affectedRows === 0) {
-        return res.status(201).json({ message: '用户不存在' });
-      }
+
+        const result = await manager.execute('UPDATE t_users SET dailyCount = dailyCount + ? WHERE username = ?', [dailyCount,req.user.username])
+        if (result.affectedRows === 0) {
+          return res.status(201).json({ message: '用户不存在' });
+        }
+      
     }
 
     const { id, totalCount, status, dailyCount} = result[0];
     res.json({ id, totalCount, status, dailyCount });
   } catch (err) {
+    logger.error(err);
     console.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
@@ -234,6 +286,7 @@ apiRouter.post('/users/status',authenticate, async (req, res) => {
     res.json({ id, totalCount, status, dailyCount });
   } catch (err) {
     console.error(err);
+    logger.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -246,14 +299,14 @@ apiRouter.get('/users',authenticate, async (req, res) => {
     // 执行 MySQL 查询语句
 
     if (rows.length === 0) {
-      const result = await manager.insert("t_users",{username:req.user.username,totalCount:INITAL_TOTAL_COUNT,status:INITAL_STATUS,dailyCount:DAILY_COUNT})
-     return res.json({ id: result.insertId, totalCount:INITAL_TOTAL_COUNT, status:INITAL_STATUS, dailyCount:DAILY_COUNT });
+      return res.status(201).json({ message: '用户不存在' });
     }
 
     const { id, totalCount, status, dailyCount} = rows[0];
     res.json({ id, totalCount, status, dailyCount });
   } catch (err) {
     console.error(err);
+    logger.error(err);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -278,6 +331,8 @@ async function updateDailyCount(username)  {
     }
   } catch (err) {
     console.error(err);
+    logger.error(err);
+
   }
 }
 
