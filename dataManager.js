@@ -1,4 +1,15 @@
 const mysql = require('mysql2/promise');
+const bunyan = require('bunyan');
+
+// 创建一个日志记录器
+const logger = bunyan.createLogger({
+  name: 'myapp',
+  level: 'error',
+  streams: [
+    { path: './myapp.log' },
+    { stream: process.stdout }
+  ]
+});
 
 class MySqlManager {
   constructor(config) {
@@ -66,6 +77,7 @@ class MySqlManager {
       return rows;
     } catch (err) {
       console.error(`Error executing query: ${err}`);
+      logger.error(err);
     }
   }
 
