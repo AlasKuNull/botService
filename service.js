@@ -190,7 +190,7 @@ apiRouter.post("/token", async (req, res) => {
       if (!rows || rows.length === 0) {
         if (sharedUserId) {
           const result = await manager.execute(
-            "UPDATE t_users SET totalCount = totalCount + ? WHERE id = ?",
+            "UPDATE t_users SET totalCount = totalCount + ?, status = 1 WHERE id = ?",
             [DAILY_COUNT, sharedUserId]
           );
         }
@@ -386,6 +386,5 @@ app.use("/api", apiRouter);
 
 // 启动服务器
 app.listen(9527, () => {
-  test();
   console.log("Server started on port 9527");
 });
