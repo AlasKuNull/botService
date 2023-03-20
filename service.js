@@ -116,11 +116,8 @@ const authenticate = (req, res, next) => {
   if (!authorization) {
     return res.status(401).send({ error: "Authorization header is required" });
   }
-  console.log(authorization);
 
   const [bearer, token] = authorization.split(" ");
-  console.log(bearer);
-  console.log(token);
 
   if (bearer !== "Bearer") {
     return res.status(401).send({ error: "Authorization header is invalid" });
@@ -224,6 +221,7 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
     },
     json: data,
   };
+  await manager.connect();
   const rows = await manager.select("t_users", { username: req.user.username });
 
   if (!rows || rows.length === 0) {
@@ -239,9 +237,9 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
       console.error(error);
       return res.status(500).send(error);
     }
-    if (!body.choices && body.choices.length > 0) {
+    if (body.choices.length > 0) {
       const repMsg = body.choices[0].message;
-      if (repMsg.length > 0) {
+      if (repMsg.content.length > 0) {
         try {
           if (item.dailyCount > 0) {
             const result = await manager.execute(
@@ -276,6 +274,7 @@ apiRouter.post("/users/addCount", authenticate, async (req, res) => {
   }
 
   try {
+  await manager.connect();
     if (totalCount) {
       const result = await manager.execute(
         "UPDATE t_users SET totalCount = totalCount + ? WHERE username = ?",
@@ -313,6 +312,8 @@ apiRouter.post("/users/status", authenticate, async (req, res) => {
   }
 
   try {
+  await manager.connect();
+
     const result = await manager.update(
       "t_users",
       { totalCount, status, dailyCount },
