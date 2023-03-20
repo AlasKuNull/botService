@@ -14,6 +14,9 @@ const WX_APP_ID = "";
 const WX_APP_SECRET = "";
 const secret = "";
 
+const ERROR_CODE_USER_NOT_EXIST = 201
+const ERROR_CODE_USER_COUNT_EMPTY = 202
+
 const app = express();
 
 // 创建一个日志记录器
@@ -142,7 +145,7 @@ apiRouter.get("/userInfo", authenticate, async (req, res) => {
     });
     console.log(user);
     if (!user || user.length === 0) {
-      return res.status(201).send({ error: "User is not exist" });
+      return res.status(201).send({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
     }
     const { id, username, status, totalCount, dailyCount } = user[0];
 
@@ -225,11 +228,11 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
   const rows = await manager.select("t_users", { username: req.user.username });
 
   if (!rows || rows.length === 0) {
-    return res.status(201).json({ message: "用户不存在" });
+    return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
   }
   const item = rows[0];
   if (item.totalCount <= 0 && item.dailyCount <= 0) {
-    return res.status(201).json({ message: "次数不够了." });
+    return res.status(201).json({ message: "次数不够了.",code: ERROR_CODE_USER_COUNT_EMPTY });
   }
 
   request(options, async (error, response, body) => {
@@ -259,9 +262,11 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
           console.error(error);
         }
       }
+      res.send(body);
+    }else{
+      return res.status(201).json({ message: body,code: ERROR_CODE_USER_NOT_EXIST });
     }
 
-    res.send(body);
   });
 });
 
@@ -281,7 +286,7 @@ apiRouter.post("/users/addCount", authenticate, async (req, res) => {
         [totalCount, req.user.username]
       );
       if (!result || result.affectedRows === 0) {
-        return res.status(201).json({ message: "用户不存在" });
+        return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
       }
     }
     if (dailyCount) {
@@ -290,7 +295,7 @@ apiRouter.post("/users/addCount", authenticate, async (req, res) => {
         [dailyCount, req.user.username]
       );
       if (!result || result.affectedRows === 0) {
-        return res.status(201).json({ message: "用户不存在" });
+        return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
       }
     }
 
@@ -321,7 +326,7 @@ apiRouter.post("/users/status", authenticate, async (req, res) => {
     );
 
     if (!result || result.affectedRows === 0) {
-      return res.status(201).json({ message: "用户不存在" });
+      return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
     }
     const { id, totalCount, status, dailyCount } = result[0];
 
@@ -343,7 +348,7 @@ apiRouter.get("/users", authenticate, async (req, res) => {
     // 执行 MySQL 查询语句
 
     if (!rows || rows.length === 0) {
-      return res.status(201).json({ message: "用户不存在" });
+      return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
     }
 
     const { id, totalCount, status, dailyCount } = rows[0];
