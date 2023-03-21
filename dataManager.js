@@ -28,7 +28,6 @@ class MySqlManager {
         password VARCHAR(36) NOT NULL,
         totalCount INT NOT NULL DEFAULT 0,
         status INT(2) NOT NULL DEFAULT 0,
-        dailyCount INT NOT NULL DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE unique_index_name (username)

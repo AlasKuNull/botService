@@ -6,8 +6,8 @@ const jwt = require("jsonwebtoken");
 const MySqlManager = require("./dataManager");
 const bunyan = require("bunyan");
 
-const INITAL_TOTAL_COUNT = 5;
-const DAILY_COUNT = 3;
+const INITAL_TOTAL_COUNT = 20000;
+const AWARD_COUNT = 10000;
 const INITAL_STATUS = 0;
 const SK_OPENAI_API_KEY ="";
 const WX_APP_ID = "";
@@ -74,7 +74,6 @@ apiRouter.post("/register", async (req, res) => {
         password,
         totalCount: INITAL_TOTAL_COUNT,
         status: INITAL_STATUS,
-        dailyCount: DAILY_COUNT,
       });
       res.send({ message: "User registered successfully" });
     } else {
@@ -96,7 +95,7 @@ apiRouter.post("/login", async (req, res) => {
     if (!rows || rows.length === 0) {
       res.status(401).send({ error: "Invalid username or password" });
     }
-    const { id, status, totalCount, dailyCount } = rows[0];
+    const { id, status, totalCount } = rows[0];
 
     const token = jwt.sign({ username }, secret, { expiresIn: "168h" });
     console.log(token);
@@ -104,7 +103,7 @@ apiRouter.post("/login", async (req, res) => {
     res.send({
       message: "Login successful",
       token,
-      data: { id, username, status, totalCount, dailyCount },
+      data: { id, username, status, totalCount },
     });
   } catch (error) {
     console.error(error);
@@ -147,9 +146,9 @@ apiRouter.get("/userInfo", authenticate, async (req, res) => {
     if (!user || user.length === 0) {
       return res.status(201).send({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
     }
-    const { id, username, status, totalCount, dailyCount } = user[0];
+    const { id, username, status, totalCount } = user[0];
 
-    res.send({ id, username, status, totalCount, dailyCount });
+    res.send({ id, username, status, totalCount });
   } catch (error) {
     console.error(error);
     logger.error(error);
@@ -191,7 +190,7 @@ apiRouter.post("/token", async (req, res) => {
         if (sharedUserId) {
           const result = await manager.execute(
             "UPDATE t_users SET totalCount = totalCount + ?, status = 1 WHERE id = ?",
-            [DAILY_COUNT, sharedUserId]
+            [AWARD_COUNT, sharedUserId]
           );
         }
         const result = await manager.insert("t_users", {
@@ -199,14 +198,13 @@ apiRouter.post("/token", async (req, res) => {
           password,
           totalCount: INITAL_TOTAL_COUNT,
           status: INITAL_STATUS,
-          dailyCount: DAILY_COUNT,
         });
       }
     } catch (error) {
       logger.error(error);
       console.log(error);
     }
-    await updateDailyCount(username);
+    // await updateDailyCount(username);
 
     // console.log(response)
     res.send({ session_key: token });
@@ -231,8 +229,8 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
     return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
   }
   const item = rows[0];
-  if (item.totalCount <= 0 && item.dailyCount <= 0) {
-    return res.status(201).json({ message: "次数不够了.",code: ERROR_CODE_USER_COUNT_EMPTY });
+  if (item.totalCount <= 0) {
+    return res.status(201).json({ message: "toks 不够了.",code: ERROR_CODE_USER_COUNT_EMPTY });
   }
 
   request(options, async (error, response, body) => {
@@ -241,22 +239,19 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
       return res.status(500).send(error);
     }
     if (body.choices.length > 0) {
+      const total_tokens = body.usage.total_tokens
+      if (item.totalCount < total_tokens) {
+        total_tokens = item.totalCount
+      }
       const repMsg = body.choices[0].message;
       if (repMsg.content.length > 0) {
         try {
-          if (item.dailyCount > 0) {
-            const result = await manager.execute(
-              "UPDATE t_users SET dailyCount = dailyCount - 1 WHERE username = ?",
-              [req.user.username]
-            );
-          } else {
             if (item.totalCount > 0) {
               const result = await manager.execute(
-                "UPDATE t_users SET totalCount = totalCount - 1 WHERE username = ?",
-                [req.user.username]
+                "UPDATE t_users SET totalCount = totalCount - ? WHERE username = ?",
+                [total_tokens,req.user.username]
               );
             }
-          }
         } catch (error) {
           logger.error(error);
           console.error(error);
@@ -272,9 +267,9 @@ apiRouter.post("/chat", authenticate, async (req, res) => {
 
 // 修改用户接口
 apiRouter.post("/users/addCount", authenticate, async (req, res) => {
-  const { sharedUserId, totalCount, dailyCount } = req.body;
+  const {totalCount } = req.body;
 
-  if (!totalCount && !dailyCount) {
+  if (!totalCount) {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
@@ -289,18 +284,9 @@ apiRouter.post("/users/addCount", authenticate, async (req, res) => {
         return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
       }
     }
-    if (dailyCount) {
-      const result = await manager.execute(
-        "UPDATE t_users SET dailyCount = dailyCount + ? WHERE username = ?",
-        [dailyCount, req.user.username]
-      );
-      if (!result || result.affectedRows === 0) {
-        return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
-      }
-    }
 
-    const { id, totalCount, status, dailyCount } = result[0];
-    res.json({ id, totalCount, status, dailyCount });
+    const { id, totalCount, status } = result[0];
+    res.json({ id, totalCount, status });
   } catch (err) {
     logger.error(err);
     console.error(err);
@@ -321,16 +307,16 @@ apiRouter.post("/users/status", authenticate, async (req, res) => {
 
     const result = await manager.update(
       "t_users",
-      { totalCount, status, dailyCount },
+      { totalCount, status },
       { username: req.user.username }
     );
 
     if (!result || result.affectedRows === 0) {
       return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
     }
-    const { id, totalCount, status, dailyCount } = result[0];
+    const { id, totalCount, status } = result[0];
 
-    res.json({ id, totalCount, status, dailyCount });
+    res.json({ id, totalCount, status });
   } catch (err) {
     console.error(err);
     logger.error(err);
@@ -341,7 +327,7 @@ apiRouter.post("/users/status", authenticate, async (req, res) => {
 // 查询用户接口
 apiRouter.get("/users", authenticate, async (req, res) => {
   try {
-    await updateDailyCount(req.user.username);
+    // await updateDailyCount(req.user.username);
     const rows = await manager.select("t_users", {
       username: req.user.username,
     });
@@ -351,8 +337,8 @@ apiRouter.get("/users", authenticate, async (req, res) => {
       return res.status(201).json({ message: "用户不存在",code:ERROR_CODE_USER_NOT_EXIST });
     }
 
-    const { id, totalCount, status, dailyCount } = rows[0];
-    res.json({ id, totalCount, status, dailyCount });
+    const { id, totalCount, status } = rows[0];
+    res.json({ id, totalCount, status });
   } catch (err) {
     console.error(err);
     logger.error(err);
@@ -360,33 +346,33 @@ apiRouter.get("/users", authenticate, async (req, res) => {
   }
 });
 
-async function updateDailyCount(username) {
-  //
-  const today = new Date().toISOString().slice(0, 10);
+// async function updateDailyCount(username) {
+//   //
+//   const today = new Date().toISOString().slice(0, 10);
 
-  try {
-    await manager.connect();
-    const rows = await manager.execute(
-      "INSERT INTO t_user_daily (user_id, date, created_at, updated_at) " +
-        "SELECT ?, ?, NOW(), NOW() FROM DUAL " +
-        "WHERE NOT EXISTS (" +
-        "  SELECT id FROM t_user_daily WHERE user_id = ? AND date = ?" +
-        ")",
-      [username, today, username, today]
-    );
-    if (!rows || rows.affectedRows === 0) {
-    } else {
-      const result = await manager.update(
-        "t_users",
-        { dailyCount: DAILY_COUNT },
-        { username: username }
-      );
-    }
-  } catch (err) {
-    console.error(err);
-    logger.error(err);
-  }
-}
+//   try {
+//     await manager.connect();
+//     const rows = await manager.execute(
+//       "INSERT INTO t_user_daily (user_id, date, created_at, updated_at) " +
+//         "SELECT ?, ?, NOW(), NOW() FROM DUAL " +
+//         "WHERE NOT EXISTS (" +
+//         "  SELECT id FROM t_user_daily WHERE user_id = ? AND date = ?" +
+//         ")",
+//       [username, today, username, today]
+//     );
+//     if (!rows || rows.affectedRows === 0) {
+//     } else {
+//       const result = await manager.update(
+//         "t_users",
+//         { dailyCount: DAILY_COUNT },
+//         { username: username }
+//       );
+//     }
+//   } catch (err) {
+//     console.error(err);
+//     logger.error(err);
+//   }
+// }
 
 app.use("/api", apiRouter);
 
