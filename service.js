@@ -376,7 +376,73 @@ apiRouter.get("/users", authenticate, async (req, res) => {
 
 app.use("/api", apiRouter);
 
+const server = require('http').createServer(app);
+const io = require('socket.io')(server);
+const chatNamespace = io.of('/api/chat')
+const ioClient = require('socket.io-client');
+
+// 连接 Flask SocketIO 服务器
+const flaskSocket = ioClient('http://54.237.68.233:5000/chat');
+
+// Socket
+// 监听来自 Flask SocketIO 服务器的 stream_data 事件
+flaskSocket.on('stream_data', (data) => {
+
+  // 将数据转发给客户端
+  chatNamespace.to(data.room).emit('stream_data', data.data);
+});
+
+// 监听来自 Flask SocketIO 服务器的 end_response 事件
+flaskSocket.on('end_response', (data) => {
+
+  console.log('end_response',data.data)
+
+  // 将数据转发给客户端
+  chatNamespace.to(data.room).emit('end_response', data.data);
+});
+
+// 监听来自 Flask SocketIO 服务器的 error_response 事件
+flaskSocket.on('error_response', (data) => {
+
+  console.log('error_response',data.data)
+
+  // 将数据转发给客户端
+  chatNamespace.to(data.room).emit('error_response', data.data);
+});
+
+
+// 监听来自客户端的连接事件
+chatNamespace.on('connection', (socket) => {
+  console.log('Client connected');
+  // 监听来自客户端的消息事件
+  socket.on('message', (data) => {
+
+    // 将数据转发给 Flask SocketIO 服务器
+    // flaskSocket.emit('message', data);
+    flaskSocket.emit('message', data);
+  });
+
+  // 监听来自客户端的离开房间事件
+  socket.on('leave_room', (data) => {
+    // 将客户端从指定房间中移除
+    socket.leave(data.room);
+  });
+
+  // 监听来自客户端的加入房间事件
+  socket.on('join_room', (data) => {
+    console.log(data.room)
+    console.log("join_room")
+    // 将客户端加入指定房间
+    socket.join(data.room);
+  });
+
+  // 监听来自客户端的断开连接事件
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
 // 启动服务器
-app.listen(9527, () => {
-  console.log("Server started on port 9527");
+server.listen(9527, () => {
+  console.log('Server running on port 9527');
 });
