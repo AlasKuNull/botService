@@ -378,7 +378,7 @@ app.use("/api", apiRouter);
 
 const server = require('http').createServer(app);
 const io = require('socket.io')(server);
-const chatNamespace = io.of('/api/chat')
+const chatNamespace = io.of('/chat')
 const ioClient = require('socket.io-client');
 
 // 连接 Flask SocketIO 服务器
@@ -443,6 +443,9 @@ chatNamespace.on('connection', (socket) => {
 });
 
 // 启动服务器
+io.listen(9528, () => {
+  console.log('Server running on port 9528');
+});
 server.listen(9527, () => {
   console.log('Server running on port 9527');
 });
